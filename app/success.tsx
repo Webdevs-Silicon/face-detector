@@ -1,17 +1,17 @@
 import { useRouter } from "expo-router";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-export default function HomeScreen() {
+export default function SuccessScreen() {
   const router = useRouter();
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Face Detection </Text>
+      <Text style={styles.text}>Face Detected Successfully!</Text>
       <TouchableOpacity
         style={styles.button}
-        onPress={() => router.push("/camera")}
+        onPress={() => router.replace("/")}
       >
-        <Text style={styles.buttonText}>Scan Face</Text>
+        <Text style={styles.buttonText}>Go Home</Text>
       </TouchableOpacity>
     </View>
   );
@@ -19,12 +19,12 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: "center", alignItems: "center" },
-  title: { fontSize: 24, marginBottom: 20, position: "absolute", top: 40 },
+  text: { fontSize: 22, marginBottom: 20 },
   button: {
     backgroundColor: "#007AFF",
-    paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     borderRadius: 8,
   },
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  buttonText: { color: "#fff", fontSize: 16 },
 });
