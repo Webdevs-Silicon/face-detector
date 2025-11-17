@@ -40,7 +40,12 @@
           }
         }
       ],
-      "react-native-vision-camera"
+      [
+        "react-native-vision-camera",
+        {
+          "enableFrameProcessors": true
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

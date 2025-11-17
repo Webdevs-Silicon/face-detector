@@ -1,33 +1,68 @@
-import { useEffect, useState } from "react";
+import { router } from "expo-router";
+import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import {
   Camera,
-  runAsync,
   useCameraDevice,
   useCameraPermission,
   useFrameProcessor,
 } from "react-native-vision-camera";
-import { detectFaces, Face } from "react-native-vision-camera-face-detector";
-// 🚨 You must import runOnJS to update state from a worklet!
-// import { runOnJS } from "react-native-reanimated";
+import {
+  Face,
+  useFaceDetector,
+} from "react-native-vision-camera-face-detector";
 import { Worklets } from "react-native-worklets-core";
+import { useFaceCapture } from "../src/hooks/useFaceCapture";
 
 export default function CameraScreen() {
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice("back");
+  const cameraRef = useRef<Camera>(null);
 
+  const [isCameraActive, setIsCameraActive] = useState(true);
   const [detectedFaces, setDetectedFaces] = useState<Face[]>([]);
+  const hasNavigated = useRef(false);
 
-  // 1. Define a regular JS function to update the state
-  // This function will be called on the main JS thread via runOnJS
-  // const updateFaces = (faces: Face[]) => {
-  //   setDetectedFaces(faces);
-  //   // You can also log here, on the main thread
-  //   console.log("Faces detected (Main Thread):", faces.length);
-  // };
+  // Use the hook provided by the package
+  const { detectFaces } = useFaceDetector({
+    performanceMode: "fast",
+    landmarkMode: "none",
+    contourMode: "none",
+  });
+
+  const { captureAndProcess, isCapturing } = useFaceCapture(cameraRef, {
+    throttleTime: 3000, // Wait 3 seconds between captures
+    onCaptureStart: () => {
+      console.log("Capture started");
+    },
+    onCaptureSuccess: (base64) => {
+      if (hasNavigated.current) return;
+
+      console.log("Capture successful!");
+      console.log("Base64 ready to send to backend");
+
+      hasNavigated.current = true;
+      setIsCameraActive(false);
+
+      router.push({
+        pathname: "/success",
+        params: {
+          base64Preview: base64.substring(0, 100), // Pass first 100 chars as preview
+        },
+      });
+    },
+    onCaptureError: (error) => {
+      console.error("Capture failed:", error.message);
+    },
+  });
 
   const handleDetectedFaces = Worklets.createRunOnJS((faces: Face[]) => {
-    console.log("faces detected", faces);
+    setDetectedFaces(faces);
+
+    if (faces.length > 0 && !isCapturing && !hasNavigated.current) {
+      console.log(`${faces.length} face(s) detected, triggering capture...`);
+      captureAndProcess();
+    }
   });
 
   useEffect(() => {
@@ -36,28 +71,27 @@ export default function CameraScreen() {
     }
   }, [hasPermission]);
 
-  // 2. Wrap the state update with runOnJS inside the frame processor
+  useEffect(() => {
+    hasNavigated.current = false;
+    setIsCameraActive(true);
+
+    return () => {
+      setIsCameraActive(false);
+    };
+  }, []);
+
   const frameProcessor = useFrameProcessor(
     (frame) => {
       "worklet";
-      runAsync(frame, async () => {
-        "worklet";
-        const faces = await detectFaces(frame as any);
-
-        // 3. Call the main thread function using runOnJS
-        handleDetectedFaces(faces);
-
-        // Note: console.log here runs on the worklet thread
-        // console.log("Faces detected (Worklet):", faces.length);
-      });
+      const faces = detectFaces(frame);
+      handleDetectedFaces(faces);
     },
-    [handleDetectedFaces]
-  ); // 4. Include updateFaces in the dependency array (optional but good practice)
+    [detectFaces, handleDetectedFaces]
+  );
 
   if (!hasPermission) {
     return <Text>Requesting Camera Permission...</Text>;
   }
-
   if (device == null) {
     return <Text>No Camera Device Found</Text>;
   }
@@ -65,13 +99,14 @@ export default function CameraScreen() {
   return (
     <View style={styles.container}>
       <Camera
+        ref={cameraRef}
         style={StyleSheet.absoluteFill}
         device={device}
-        isActive={true}
+        isActive={isCameraActive}
         frameProcessor={frameProcessor}
+        pixelFormat="yuv"
+        photo={true}
       />
-
-      {/* Display the count of detected faces */}
       <View style={styles.faceCountContainer}>
         <Text style={styles.faceCountText}>
           Faces Detected: {detectedFaces.length}
@@ -80,7 +115,6 @@ export default function CameraScreen() {
     </View>
   );
 }
-// ... (styles remain the same)
 
 const styles = StyleSheet.create({
   container: {
@@ -100,83 +134,3 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
 });
-
-// import { useEffect, useState } from "react";
-// import { StyleSheet, Text, View } from "react-native";
-// import {
-//   Camera,
-//   runAsync,
-//   runOnJS,
-//   useCameraDevice,
-//   useCameraPermission,
-//   useFrameProcessor,
-// } from "react-native-vision-camera";
-// import { detectFaces, Face } from "react-native-vision-camera-face-detector";
-
-// export default function CameraScreen() {
-//   const { hasPermission, requestPermission } = useCameraPermission();
-//   const device = useCameraDevice("back");
-//   const [detectedFaces, setDetectedFaces] = useState<Face[]>([]);
-
-//   useEffect(() => {
-//     if (!hasPermission) {
-//       requestPermission();
-//     }
-//   }, [hasPermission]);
-
-//   const frameProcessor = useFrameProcessor((frame) => {
-//     "worklet";
-//     runAsync(frame, async () => {
-//       "worklet";
-//       const faces = await detectFaces(frame as any);
-//       console.log("Faces detected:", faces);
-//       // Use runOnJS to call the state setter on the JS thread
-//       runOnJS(setDetectedFaces)(faces);
-//     });
-//   }, []);
-
-//   console.log("Current detected faces:", detectedFaces);
-
-//   if (!hasPermission) {
-//     return <Text>Requesting Camera Permission...</Text>;
-//   }
-
-//   if (device == null) {
-//     return <Text>No Camera Device Found</Text>;
-//   }
-
-//   return (
-//     <View style={styles.container}>
-//       <Camera
-//         style={StyleSheet.absoluteFill}
-//         device={device}
-//         isActive={true}
-//         frameProcessor={frameProcessor}
-//       />
-//       <View style={styles.faceCountContainer}>
-//         <Text style={styles.faceCountText}>
-//           Faces Detected: {detectedFaces.length}
-//         </Text>
-//       </View>
-//     </View>
-//   );
-// }
-
-// const styles = StyleSheet.create({
-//   container: {
-//     flex: 1,
-//   },
-//   faceCountContainer: {
-//     position: "absolute",
-//     top: 50,
-//     width: "100%",
-//     alignItems: "center",
-//   },
-//   faceCountText: {
-//     color: "white",
-//     fontSize: 20,
-//     backgroundColor: "rgba(0,0,0,0.5)",
-//     padding: 10,
-//     borderRadius: 5,
-//   },
-// });
