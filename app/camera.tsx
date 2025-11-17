@@ -16,14 +16,22 @@ import { useFaceCapture } from "../src/hooks/useFaceCapture";
 
 export default function CameraScreen() {
   const { hasPermission, requestPermission } = useCameraPermission();
-  const device = useCameraDevice("back");
+  const device = useCameraDevice("front");
   const cameraRef = useRef<Camera>(null);
-
   const [isCameraActive, setIsCameraActive] = useState(true);
   const [detectedFaces, setDetectedFaces] = useState<Face[]>([]);
+  const [largestFace, setLargestFace] = useState<Face | null>(null);
   const hasNavigated = useRef(false);
+  const isCapturingRef = useRef(false);
+  const [frameSize, setFrameSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+  const [previewSize, setPreviewSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
 
-  // Use the hook provided by the package
   const { detectFaces } = useFaceDetector({
     performanceMode: "fast",
     landmarkMode: "none",
@@ -31,39 +39,80 @@ export default function CameraScreen() {
   });
 
   const { captureAndProcess, isCapturing } = useFaceCapture(cameraRef, {
-    throttleTime: 3000, // Wait 3 seconds between captures
+    throttleTime: 3000,
     onCaptureStart: () => {
       console.log("Capture started");
+      isCapturingRef.current = true;
     },
     onCaptureSuccess: (base64) => {
       if (hasNavigated.current) return;
-
       console.log("Capture successful!");
       console.log("Base64 ready to send to backend");
-
       hasNavigated.current = true;
+      isCapturingRef.current = false;
       setIsCameraActive(false);
-
       router.push({
         pathname: "/success",
         params: {
-          base64Preview: base64.substring(0, 100), // Pass first 100 chars as preview
+          base64Preview: base64.substring(0, 100),
         },
       });
     },
     onCaptureError: (error) => {
       console.error("Capture failed:", error.message);
+      isCapturingRef.current = false;
     },
   });
 
-  const handleDetectedFaces = Worklets.createRunOnJS((faces: Face[]) => {
-    setDetectedFaces(faces);
+  // Function to find the largest face by bounding box area
+  const findLargestFace = (faces: Face[]): Face | null => {
+    if (faces.length === 0) return null;
 
-    if (faces.length > 0 && !isCapturing && !hasNavigated.current) {
-      console.log(`${faces.length} face(s) detected, triggering capture...`);
-      captureAndProcess();
+    return faces.reduce((largest, current) => {
+      const largestArea = largest.bounds.width * largest.bounds.height;
+      const currentArea = current.bounds.width * current.bounds.height;
+      return currentArea > largestArea ? current : largest;
+    });
+  };
+
+  const handleDetectedFaces = Worklets.createRunOnJS(
+    (faces: Face[], frameWidth: number, frameHeight: number) => {
+      setDetectedFaces(faces);
+      if (!frameSize) {
+        setFrameSize({ width: frameWidth, height: frameHeight });
+      }
+
+      const largest = findLargestFace(faces);
+      setLargestFace(largest);
+
+      // Check both the hook's isCapturing state AND our ref to prevent double captures
+      if (
+        largest &&
+        !isCapturing &&
+        !hasNavigated.current &&
+        !isCapturingRef.current &&
+        previewSize
+      ) {
+        const originalBounds = largest.bounds;
+
+        const mirroredX =
+          previewSize.width - originalBounds.x - originalBounds.width;
+
+        const mirroredBounds = {
+          x: mirroredX,
+          y: originalBounds.y,
+          width: originalBounds.width,
+          height: originalBounds.height,
+        };
+
+        captureAndProcess(
+          mirroredBounds,
+          previewSize.width,
+          previewSize.height
+        );
+      }
     }
-  });
+  );
 
   useEffect(() => {
     if (!hasPermission) {
@@ -73,8 +122,8 @@ export default function CameraScreen() {
 
   useEffect(() => {
     hasNavigated.current = false;
+    isCapturingRef.current = false;
     setIsCameraActive(true);
-
     return () => {
       setIsCameraActive(false);
     };
@@ -84,7 +133,7 @@ export default function CameraScreen() {
     (frame) => {
       "worklet";
       const faces = detectFaces(frame);
-      handleDetectedFaces(faces);
+      handleDetectedFaces(faces, frame.width, frame.height);
     },
     [detectFaces, handleDetectedFaces]
   );
@@ -92,11 +141,40 @@ export default function CameraScreen() {
   if (!hasPermission) {
     return <Text>Requesting Camera Permission...</Text>;
   }
+
   if (device == null) {
     return <Text>No Camera Device Found</Text>;
   }
 
   return (
+    // <View style={styles.container}>
+    //   <Camera
+    //     ref={cameraRef}
+    //     style={StyleSheet.absoluteFill}
+    //     device={device}
+    //     isActive={isCameraActive}
+    //     frameProcessor={frameProcessor}
+    //     pixelFormat="yuv"
+    //     photo={true}
+    //     onLayout={(e) => {
+    //       const { width, height } = e.nativeEvent.layout;
+    //       if (!previewSize) setPreviewSize({ width, height });
+    //     }}
+    //   />
+    //   <View style={styles.faceCountContainer}>
+    //     <Text style={styles.faceCountText}>
+    //       Faces Detected: {detectedFaces.length}
+    //     </Text>
+    //     {largestFace && (
+    //       <Text style={styles.faceInfoText}>
+    //         Largest Face Area:{" "}
+    //         {(largestFace.bounds.width * largestFace.bounds.height).toFixed(0)}{" "}
+    //         px²
+    //       </Text>
+    //     )}
+    //   </View>
+    // </View>
+
     <View style={styles.container}>
       <Camera
         ref={cameraRef}
@@ -106,11 +184,65 @@ export default function CameraScreen() {
         frameProcessor={frameProcessor}
         pixelFormat="yuv"
         photo={true}
+        onLayout={(e) => {
+          const { width, height } = e.nativeEvent.layout;
+          if (!previewSize) setPreviewSize({ width, height });
+        }}
       />
+
+      {/* 🔥 Draw bounding boxes on top of camera */}
+      {previewSize &&
+        frameSize &&
+        detectedFaces.map((face, index) => {
+          // const scaleX = previewSize.width / frameSize.width;
+          // const scaleY = previewSize.height / frameSize.height;
+
+          // const scaledX = face.bounds.x;
+          // const scaledY = face.bounds.y * 1.2;
+          // const scaledWidth = face.bounds.width * scaleX * 2.5;
+          // const scaledHeight = face.bounds.height * scaleY; // Calculate flipped X coordinate (for front camera)
+          // const flippedX = previewSize.width - scaledX - scaledWidth * 0.8;
+
+          const scaleX = previewSize.width / frameSize.width;
+          const scaleY = previewSize.height / frameSize.height;
+
+          const scaledX = face.bounds.x * scaleX;
+          const scaledY = face.bounds.y * scaleY;
+          const scaledWidth = face.bounds.width;
+          const scaledHeight = face.bounds.height * scaleY;
+
+          // Calculate flipped X coordinate (for front camera)
+          const flippedX = previewSize.width - scaledX - scaledWidth;
+
+          return (
+            <View
+              key={index}
+              style={{
+                position: "absolute",
+                left: flippedX,
+                top: scaledY,
+                width: scaledWidth,
+                height: scaledHeight,
+                borderWidth: 3,
+                borderColor: "red",
+                borderRadius: 4,
+              }}
+            />
+          );
+        })}
+
       <View style={styles.faceCountContainer}>
         <Text style={styles.faceCountText}>
           Faces Detected: {detectedFaces.length}
         </Text>
+
+        {largestFace && (
+          <Text style={styles.faceInfoText}>
+            Largest Face Area:{" "}
+            {(largestFace.bounds.width * largestFace.bounds.height).toFixed(0)}{" "}
+            px²
+          </Text>
+        )}
       </View>
     </View>
   );
@@ -132,5 +264,13 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.5)",
     padding: 10,
     borderRadius: 5,
+  },
+  faceInfoText: {
+    color: "white",
+    fontSize: 16,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    padding: 8,
+    borderRadius: 5,
+    marginTop: 5,
   },
 });
