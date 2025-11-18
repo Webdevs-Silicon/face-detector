@@ -49,7 +49,6 @@ export const useFaceCapture = (
 
   const sendToBackend = async (base64Image: string) => {
     try {
-      console.log("called");
       const response = await fetch("http://192.168.29.241:5000/save-base64", {
         method: "POST",
         headers: {
@@ -105,33 +104,27 @@ export const useFaceCapture = (
       Image.getSize(uri, (w, h) => resolve({ width: w, height: h }), reject)
     );
 
-    const mirroredX = previewWidth - bounds.x - bounds.width;
-    const mirroredBounds = {
-      x: mirroredX,
-      y: bounds.y,
-      width: bounds.width,
-      height: bounds.height,
-    };
-
-    // scale → image space
+    // Scale preview coordinates to photo coordinates
     const scaleX = photoWidth / previewWidth;
     const scaleY = photoHeight / previewHeight;
 
-    let x = mirroredBounds.x * scaleX;
-    let y = mirroredBounds.y * scaleY;
-    let w = mirroredBounds.width * scaleX;
-    let h = mirroredBounds.height * scaleY;
+    let x = bounds.x * scaleX;
+    let y = bounds.y * scaleY;
+    let w = bounds.width * scaleX;
+    let h = bounds.height * scaleY;
 
-    const topPadY = 100;
-    const bottomPadY = 600;
-    const padX = 100;
+    // Add padding around the face (adjust these values as needed)
+    // Using percentage-based padding relative to face size
+    const topPad = h * 0.3; // 30% of face height above
+    const bottomPad = h * 0.3; // 30% of face height below
+    const sidePad = w * 0.2; // 20% of face width on each side
 
-    let originX = x - padX;
-    let originY = y - topPadY;
-    let width = w + padX * 2;
-    let height = h + topPadY + bottomPadY;
+    let originX = x - sidePad;
+    let originY = y - topPad;
+    let width = w + sidePad * 2;
+    let height = h + topPad + bottomPad;
 
-    // clamp edges
+    // Clamp to image boundaries
     originX = Math.max(0, originX);
     originY = Math.max(0, originY);
 
@@ -145,6 +138,8 @@ export const useFaceCapture = (
       height: Math.round(height),
     };
 
+    console.log("Crop rect:", cropRect);
+    console.log("Face bounds scaled:", { x, y, w, h });
     // manipulate
     const manip = await ImageManipulator.manipulate(uri);
     const result = await manip.crop(cropRect).renderAsync();
@@ -164,15 +159,11 @@ export const useFaceCapture = (
     previewHeight?: number
   ) => {
     if (!cameraRef.current || isCapturing) {
-      console.log("⏭Capture skipped: camera not ready or already capturing");
       return;
     }
 
     const now = Date.now();
     if (now - lastCaptureTime < throttleTime) {
-      console.log(
-        `⏸Capture throttled. Wait ${throttleTime - (now - lastCaptureTime)}ms`
-      );
       return;
     }
 
@@ -183,8 +174,6 @@ export const useFaceCapture = (
       setIsCapturing(true);
       setLastCaptureTime(now);
       onCaptureStart?.();
-
-      console.log("Starting image capture...");
 
       const photo = await cameraRef.current.takePhoto({
         flash: "off",

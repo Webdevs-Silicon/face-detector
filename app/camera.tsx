@@ -91,25 +91,32 @@ export default function CameraScreen() {
         !isCapturing &&
         !hasNavigated.current &&
         !isCapturingRef.current &&
-        previewSize
+        previewSize &&
+        frameSize
       ) {
         const originalBounds = largest.bounds;
 
-        const mirroredX =
-          previewSize.width - originalBounds.x - originalBounds.width;
+        // Transform frame coordinates to preview coordinates
+        const scaleX = previewSize.width / frameSize.height;
+        const scaleY = previewSize.height / frameSize.width;
 
-        const mirroredBounds = {
-          x: mirroredX,
-          y: originalBounds.y,
-          width: originalBounds.width,
-          height: originalBounds.height,
+        const scaledWidth = originalBounds.width * scaleX;
+        const scaledHeight = originalBounds.height * scaleY;
+        const scaledX = originalBounds.x * scaleX;
+        const scaledY = originalBounds.y * scaleY;
+
+        // Apply mirror flip for front camera
+        const flippedX = previewSize.width - scaledX - scaledWidth;
+
+        // These are the bounds in preview coordinate system
+        const previewBounds = {
+          x: flippedX,
+          y: scaledY,
+          width: scaledWidth,
+          height: scaledHeight,
         };
 
-        captureAndProcess(
-          mirroredBounds,
-          previewSize.width,
-          previewSize.height
-        );
+        captureAndProcess(previewBounds, previewSize.width, previewSize.height);
       }
     }
   );
@@ -147,34 +154,6 @@ export default function CameraScreen() {
   }
 
   return (
-    // <View style={styles.container}>
-    //   <Camera
-    //     ref={cameraRef}
-    //     style={StyleSheet.absoluteFill}
-    //     device={device}
-    //     isActive={isCameraActive}
-    //     frameProcessor={frameProcessor}
-    //     pixelFormat="yuv"
-    //     photo={true}
-    //     onLayout={(e) => {
-    //       const { width, height } = e.nativeEvent.layout;
-    //       if (!previewSize) setPreviewSize({ width, height });
-    //     }}
-    //   />
-    //   <View style={styles.faceCountContainer}>
-    //     <Text style={styles.faceCountText}>
-    //       Faces Detected: {detectedFaces.length}
-    //     </Text>
-    //     {largestFace && (
-    //       <Text style={styles.faceInfoText}>
-    //         Largest Face Area:{" "}
-    //         {(largestFace.bounds.width * largestFace.bounds.height).toFixed(0)}{" "}
-    //         px²
-    //       </Text>
-    //     )}
-    //   </View>
-    // </View>
-
     <View style={styles.container}>
       <Camera
         ref={cameraRef}
@@ -184,34 +163,26 @@ export default function CameraScreen() {
         frameProcessor={frameProcessor}
         pixelFormat="yuv"
         photo={true}
+        resizeMode="contain"
         onLayout={(e) => {
           const { width, height } = e.nativeEvent.layout;
           if (!previewSize) setPreviewSize({ width, height });
         }}
       />
 
-      {/* 🔥 Draw bounding boxes on top of camera */}
-      {previewSize &&
+      {/* {previewSize &&
         frameSize &&
         detectedFaces.map((face, index) => {
-          // const scaleX = previewSize.width / frameSize.width;
-          // const scaleY = previewSize.height / frameSize.height;
+          const scaleX = previewSize.width / frameSize.height; // 393 / 480
+          const scaleY = previewSize.height / frameSize.width; // 873 / 640
 
-          // const scaledX = face.bounds.x;
-          // const scaledY = face.bounds.y * 1.2;
-          // const scaledWidth = face.bounds.width * scaleX * 2.5;
-          // const scaledHeight = face.bounds.height * scaleY; // Calculate flipped X coordinate (for front camera)
-          // const flippedX = previewSize.width - scaledX - scaledWidth * 0.8;
-
-          const scaleX = previewSize.width / frameSize.width;
-          const scaleY = previewSize.height / frameSize.height;
-
+          // Scale the face bounds
+          const scaledWidth = face.bounds.width * scaleX;
+          const scaledHeight = face.bounds.height * scaleY;
           const scaledX = face.bounds.x * scaleX;
           const scaledY = face.bounds.y * scaleY;
-          const scaledWidth = face.bounds.width;
-          const scaledHeight = face.bounds.height * scaleY;
 
-          // Calculate flipped X coordinate (for front camera)
+          // Calculate flipped X coordinate (for front camera mirror effect)
           const flippedX = previewSize.width - scaledX - scaledWidth;
 
           return (
@@ -224,25 +195,25 @@ export default function CameraScreen() {
                 width: scaledWidth,
                 height: scaledHeight,
                 borderWidth: 3,
-                borderColor: "red",
+                borderColor: largestFace === face ? "red" : "lime",
                 borderRadius: 4,
               }}
             />
           );
-        })}
+        })} */}
 
       <View style={styles.faceCountContainer}>
         <Text style={styles.faceCountText}>
           Faces Detected: {detectedFaces.length}
         </Text>
 
-        {largestFace && (
+        {/* {largestFace && (
           <Text style={styles.faceInfoText}>
             Largest Face Area:{" "}
             {(largestFace.bounds.width * largestFace.bounds.height).toFixed(0)}{" "}
             px²
           </Text>
-        )}
+        )} */}
       </View>
     </View>
   );
