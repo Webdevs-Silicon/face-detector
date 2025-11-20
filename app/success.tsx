@@ -6,7 +6,7 @@ export default function SuccessScreen() {
   const base64Preview = params.base64Preview as string;
 
   const handleGoBack = () => {
-    router.back();
+    router.replace("/");
   };
 
   const handleTryAgain = () => {

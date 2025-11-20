@@ -49,16 +49,18 @@ export const useFaceCapture = (
 
   const sendToBackend = async (base64Image: string) => {
     try {
-      const response = await fetch("http://192.168.29.241:5000/save-base64", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          image: base64Image,
-          timestamp: new Date().toISOString(),
-        }),
-      });
+      const response = await fetch(
+        "https://mambaservices.in/ChangAITest/ChangAIGateWay.php",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            Image: base64Image,
+          }),
+        }
+      );
       const result = await response.json();
       console.log("Backend response:", result);
       return result;
